@@ -6,9 +6,14 @@ import Head from 'next/head';
 import { Spinner, Container, Button } from 'react-bootstrap';
 import dynamic from 'next/dynamic';
 
-// Dynamically import client-side only components
+// Dynamically import Swiper with modules
 const Swiper = dynamic(() => import('swiper/react').then(mod => mod.Swiper), { ssr: false });
 const SwiperSlide = dynamic(() => import('swiper/react').then(mod => mod.SwiperSlide), { ssr: false });
+
+// Import Swiper modules at the top level
+import { Navigation, Pagination, A11y } from 'swiper/modules';
+
+// Dynamically import framer-motion
 const motion = dynamic(() => import('framer-motion').then(mod => mod.motion), { ssr: false });
 const AnimatePresence = dynamic(() => import('framer-motion').then(mod => mod.AnimatePresence), { ssr: false });
 
@@ -592,11 +597,7 @@ export default function Slides() {
               {isClient && Swiper && SwiperSlide ? (
                 <Swiper
                   ref={swiperRef}
-                  modules={[
-                    require('swiper/modules').Navigation,
-                    require('swiper/modules').Pagination,
-                    require('swiper/modules').A11y
-                  ]}
+                  modules={[Navigation, Pagination, A11y]}
                   spaceBetween={30}
                   slidesPerView={1}
                   navigation
