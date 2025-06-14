@@ -4,15 +4,13 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import Head from 'next/head';
 import { Spinner, Container, Button } from 'react-bootstrap';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination, A11y, EffectCube, Autoplay } from 'swiper/modules';
-import { motion, AnimatePresence } from 'framer-motion';
-import html2pdf from 'html2pdf.js';
+import dynamic from 'next/dynamic';
 
-import 'swiper/css';
-import 'swiper/css/navigation';
-import 'swiper/css/pagination';
-import 'swiper/css/effect-cube';
+// Dynamically import client-side only components
+const Swiper = dynamic(() => import('swiper/react').then(mod => mod.Swiper), { ssr: false });
+const SwiperSlide = dynamic(() => import('swiper/react').then(mod => mod.SwiperSlide), { ssr: false });
+const motion = dynamic(() => import('framer-motion').then(mod => mod.motion), { ssr: false });
+const AnimatePresence = dynamic(() => import('framer-motion').then(mod => mod.AnimatePresence), { ssr: false });
 
 export default function Slides() {
   const router = useRouter();
@@ -21,11 +19,19 @@ export default function Slides() {
   const [loading, setLoading] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   const slidesRef = useRef();
   const swiperRef = useRef();
 
-  // Enhanced particle system
+  // Ensure we're on client side
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Enhanced particle system - only on client
+  useEffect(() => {
+    if (!isClient) return;
+    
     const container = document.querySelector('.particles');
     if (!container) return;
 
@@ -48,7 +54,7 @@ export default function Slides() {
         container.innerHTML = '';
       }
     };
-  }, []);
+  }, [isClient]);
 
   useEffect(() => {
     if (topic) {
@@ -108,11 +114,14 @@ export default function Slides() {
   }, [topic]);
 
   const handleDownloadPDF = async () => {
-    if (!slides.length) return;
+    if (!slides.length || !isClient) return;
     
     setIsGenerating(true);
     
     try {
+      // Dynamically import html2pdf only when needed
+      const html2pdf = (await import('html2pdf.js')).default;
+      
       // Create a clean PDF version of slides
       const printWindow = window.open('', '_blank');
       
@@ -231,6 +240,24 @@ export default function Slides() {
     return gradients[index % gradients.length];
   };
 
+  // Fallback component for SSR
+  const StaticSlide = ({ slide, index }) => (
+    <div
+      className="slide-content"
+      style={{ 
+        background: getSlideGradient(index),
+        color: '#ffffff'
+      }}
+    >
+      <h3 className="slide-title">{slide.title}</h3>
+      <ul className="slide-bullets">
+        {slide.bullets.map((bullet, i) => (
+          <li key={i}>{bullet}</li>
+        ))}
+      </ul>
+    </div>
+  );
+
   return (
     <>
       <Head>
@@ -238,6 +265,12 @@ export default function Slides() {
         <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+        {/* Only load Swiper CSS on client side */}
+        {isClient && (
+          <>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Swiper/8.4.7/swiper-bundle.min.css" />
+          </>
+        )}
       </Head>
 
       <style jsx global>{`
@@ -332,6 +365,7 @@ export default function Slides() {
           box-shadow: 
             0 15px 35px rgba(0, 0, 0, 0.2),
             inset 0 1px 0 rgba(255, 255, 255, 0.3);
+          margin-bottom: 2rem;
         }
         
         .slide-content::before {
@@ -495,6 +529,12 @@ export default function Slides() {
           border: 2px solid rgba(102, 126, 234, 0.3);
           box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
+
+        .static-slides {
+          max-height: 60vh;
+          overflow-y: auto;
+          padding: 1rem;
+        }
       `}</style>
 
       <div className="particles"></div>
@@ -502,27 +542,34 @@ export default function Slides() {
       <nav className="navbar navbar-expand-lg navbar-dark fixed-top">
         <div className="container">
           <a
-          className="navbar-brand"
-          role="button"
-          style={{ cursor: 'pointer' }}
-          onClick={() => router.push('/')}
-        >
-          <i className="fas fa-graduation-cap me-2"></i>EduMath
-        </a>
+            className="navbar-brand"
+            role="button"
+            style={{ cursor: 'pointer' }}
+            onClick={() => router.push('/')}
+          >
+            <i className="fas fa-graduation-cap me-2"></i>EduMath
+          </a>
         </div>
       </nav>
 
       <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', paddingTop: '6rem' }}>
         <div className="slides-container" style={{ width: '100%', maxWidth: '900px', padding: '2.5rem', position: 'relative' }}>
-          <motion.h2 
-            className="text-center mb-4" 
-            style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-          >
-            ✨ {topic} - Interactive Learning Journey ✨
-          </motion.h2>
+          {/* Title with conditional animation */}
+          {isClient && motion ? (
+            <motion.h2 
+              className="text-center mb-4" 
+              style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+            >
+              ✨ {topic} - Interactive Learning Journey ✨
+            </motion.h2>
+          ) : (
+            <h2 className="text-center mb-4" style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}>
+              ✨ {topic} - Interactive Learning Journey ✨
+            </h2>
+          )}
           
           {slides.length > 0 && (
             <div className="progress-indicator">
@@ -532,63 +579,74 @@ export default function Slides() {
           )}
           
           {loading ? (
-            <motion.div 
-              className="loading-spinner"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5 }}
-            >
+            <div className="loading-spinner">
               <Spinner animation="border" variant="primary" size="lg" />
               <div className="mt-3">
                 <h4>🎨 Creating Your Amazing Slides...</h4>
                 <p>Preparing an incredible learning experience!</p>
               </div>
-            </motion.div>
+            </div>
           ) : (
             <>
-              <Swiper
-                ref={swiperRef}
-                modules={[Navigation, Pagination, A11y]}
-                spaceBetween={30}
-                slidesPerView={1}
-                navigation
-                pagination={{ clickable: true }}
-                onSlideChange={(swiper) => setCurrentSlide(swiper.activeIndex)}
-                style={{ padding: '1rem' }}
-              >
-                <AnimatePresence mode="wait">
+              {/* Conditional rendering based on client availability */}
+              {isClient && Swiper && SwiperSlide ? (
+                <Swiper
+                  ref={swiperRef}
+                  modules={[
+                    require('swiper/modules').Navigation,
+                    require('swiper/modules').Pagination,
+                    require('swiper/modules').A11y
+                  ]}
+                  spaceBetween={30}
+                  slidesPerView={1}
+                  navigation
+                  pagination={{ clickable: true }}
+                  onSlideChange={(swiper) => setCurrentSlide(swiper.activeIndex)}
+                  style={{ padding: '1rem' }}
+                >
                   {slides.map((slide, index) => (
                     <SwiperSlide key={index}>
-                      <motion.div
-                        className="slide-content"
-                        style={{ 
-                          background: getSlideGradient(index),
-                          color: '#ffffff'
-                        }}
-                        variants={slideVariants}
-                        initial="enter"
-                        animate="center"
-                        exit="exit"
-                        transition={{ duration: 0.6, ease: 'easeInOut' }}
-                      >
-                        <h3 className="slide-title">{slide.title}</h3>
-                        <ul className="slide-bullets">
-                          {slide.bullets.map((bullet, i) => (
-                            <motion.li 
-                              key={i}
-                              initial={{ opacity: 0, x: -30 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i * 0.2, duration: 0.6 }}
-                            >
-                              {bullet}
-                            </motion.li>
-                          ))}
-                        </ul>
-                      </motion.div>
+                      {motion ? (
+                        <motion.div
+                          className="slide-content"
+                          style={{ 
+                            background: getSlideGradient(index),
+                            color: '#ffffff'
+                          }}
+                          variants={slideVariants}
+                          initial="enter"
+                          animate="center"
+                          exit="exit"
+                          transition={{ duration: 0.6, ease: 'easeInOut' }}
+                        >
+                          <h3 className="slide-title">{slide.title}</h3>
+                          <ul className="slide-bullets">
+                            {slide.bullets.map((bullet, i) => (
+                              <motion.li 
+                                key={i}
+                                initial={{ opacity: 0, x: -30 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.2, duration: 0.6 }}
+                              >
+                                {bullet}
+                              </motion.li>
+                            ))}
+                          </ul>
+                        </motion.div>
+                      ) : (
+                        <StaticSlide slide={slide} index={index} />
+                      )}
                     </SwiperSlide>
                   ))}
-                </AnimatePresence>
-              </Swiper>
+                </Swiper>
+              ) : (
+                // Fallback static slides for SSR
+                <div className="static-slides">
+                  {slides.map((slide, index) => (
+                    <StaticSlide key={index} slide={slide} index={index} />
+                  ))}
+                </div>
+              )}
 
               <div className="d-grid gap-3 mt-4">
                 <Button 
@@ -606,7 +664,7 @@ export default function Slides() {
                       className="magic-button w-100"
                       style={{ background: 'linear-gradient(45deg, #38a169, #2f855a) !important' }}
                       onClick={handleDownloadPDF}
-                      disabled={isGenerating}
+                      disabled={isGenerating || !isClient}
                     >
                       {isGenerating ? (
                         <>
