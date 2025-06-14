@@ -4,7 +4,6 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import Head from 'next/head';
 import { Spinner, Container, Button } from 'react-bootstrap';
-import dynamic from 'next/dynamic';
 
 // Import Swiper modules and CSS - static imports work better with Vercel
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -16,25 +15,6 @@ import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import 'swiper/css/effect-coverflow';
 
-// Safer dynamic import with proper error handling
-const MotionDiv = dynamic(
-  () => import('framer-motion').then((mod) => ({
-    default: mod.motion.div
-  })),
-  { 
-    ssr: false,
-    loading: () => null
-  }
-);
-
-// Create a wrapper component to handle motion safely
-const AnimatedSlideWrapper = ({ children, motionEnabled, ...motionProps }) => {
-  if (motionEnabled) {
-    return <MotionDiv {...motionProps}>{children}</MotionDiv>;
-  }
-  return <div>{children}</div>;
-};
-
 export default function Slides() {
   const router = useRouter();
   const { topic } = router.query;
@@ -43,28 +23,14 @@ export default function Slides() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isClient, setIsClient] = useState(false);
-  const [motionEnabled, setMotionEnabled] = useState(false);
   const swiperRef = useRef(null);
 
-  // Client-side detection with better error handling
+  // Client-side detection
   useEffect(() => {
     setIsClient(true);
-    
-    // Safer framer-motion detection
-    const checkMotion = async () => {
-      try {
-        await import('framer-motion');
-        setMotionEnabled(true);
-      } catch (error) {
-        console.log('Framer Motion not available, using fallback animations');
-        setMotionEnabled(false);
-      }
-    };
-    
-    checkMotion();
   }, []);
 
-  // Enhanced particle system with better client-side check
+  // Particle system - simplified and safer
   useEffect(() => {
     if (!isClient) return;
     
@@ -97,7 +63,7 @@ export default function Slides() {
     };
   }, [isClient]);
 
-  // Fetch slides data with better error handling
+  // Fetch slides data
   useEffect(() => {
     if (!topic) return;
     
@@ -287,7 +253,7 @@ export default function Slides() {
     return gradients[index % gradients.length];
   };
 
-  // Enhanced slide component with safer motion handling
+  // Simplified slide component without framer-motion
   const SlideContent = ({ slide, index }) => {
     const slideStyle = {
       background: getSlideGradient(index),
@@ -300,42 +266,19 @@ export default function Slides() {
       boxShadow: '0 15px 35px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3)',
     };
 
-    const slideContent = (
-      <>
+    return (
+      <div className="slide-content" style={slideStyle}>
         <h3 className="slide-title">{slide.title}</h3>
         <ul className="slide-bullets">
           {slide.bullets.map((bullet, i) => (
             <li key={i}>{bullet}</li>
           ))}
         </ul>
-      </>
-    );
-
-    if (motionEnabled && isClient) {
-      return (
-        <AnimatedSlideWrapper
-          motionEnabled={true}
-          className="slide-content"
-          style={slideStyle}
-          initial={{ opacity: 0, scale: 0.9, rotateY: 45 }}
-          animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-          exit={{ opacity: 0, scale: 0.9, rotateY: -45 }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-        >
-          {slideContent}
-        </AnimatedSlideWrapper>
-      );
-    }
-
-    // Fallback without motion
-    return (
-      <div className="slide-content" style={slideStyle}>
-        {slideContent}
       </div>
     );
   };
 
-  // Safer Swiper configuration
+  // Swiper configuration
   const swiperOptions = {
     modules: [Navigation, Pagination, A11y, EffectCoverflow],
     spaceBetween: 30,
