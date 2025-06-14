@@ -6,16 +6,24 @@ import Head from 'next/head';
 import { Spinner, Container, Button } from 'react-bootstrap';
 import dynamic from 'next/dynamic';
 
-// Dynamically import Swiper with modules
-const Swiper = dynamic(() => import('swiper/react').then(mod => mod.Swiper), { ssr: false });
-const SwiperSlide = dynamic(() => import('swiper/react').then(mod => mod.SwiperSlide), { ssr: false });
+// Import Swiper modules and CSS - static imports work better with Vercel
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Navigation, Pagination, A11y, EffectCoverflow } from 'swiper/modules';
 
-// Import Swiper modules at the top level
-import { Navigation, Pagination, A11y } from 'swiper/modules';
+// Import Swiper styles
+import 'swiper/css';
+import 'swiper/css/navigation';
+import 'swiper/css/pagination';
+import 'swiper/css/effect-coverflow';
 
-// Dynamically import framer-motion
-const motion = dynamic(() => import('framer-motion').then(mod => mod.motion), { ssr: false });
-const AnimatePresence = dynamic(() => import('framer-motion').then(mod => mod.AnimatePresence), { ssr: false });
+// Dynamic import for framer-motion only (optional enhancement)
+const MotionDiv = dynamic(
+  () => import('framer-motion').then((mod) => mod.motion.div),
+  { 
+    ssr: false,
+    loading: () => null
+  }
+);
 
 export default function Slides() {
   const router = useRouter();
@@ -25,15 +33,21 @@ export default function Slides() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isClient, setIsClient] = useState(false);
-  const slidesRef = useRef();
-  const swiperRef = useRef();
+  const [motionEnabled, setMotionEnabled] = useState(false);
+  const swiperRef = useRef(null);
 
-  // Ensure we're on client side
+  // Client-side detection
   useEffect(() => {
     setIsClient(true);
+    // Check if framer-motion is available
+    import('framer-motion').then(() => {
+      setMotionEnabled(true);
+    }).catch(() => {
+      setMotionEnabled(false);
+    });
   }, []);
 
-  // Enhanced particle system - only on client
+  // Enhanced particle system
   useEffect(() => {
     if (!isClient) return;
     
@@ -41,6 +55,9 @@ export default function Slides() {
     if (!container) return;
 
     const colors = ['#3182ce', '#805ad5', '#38a169', '#e53e3e', '#dd6b20'];
+    
+    // Clear existing particles
+    container.innerHTML = '';
     
     for (let i = 0; i < 80; i++) {
       const particle = document.createElement('div');
@@ -61,9 +78,12 @@ export default function Slides() {
     };
   }, [isClient]);
 
+  // Fetch slides data
   useEffect(() => {
     if (topic) {
       setIsGenerating(true);
+      setLoading(true);
+      
       axios.post('/api/gemini', {
         prompt: `Create an engaging educational presentation about "${topic}" for primary school students. Generate exactly 4-5 slides with:
         - Slide 1: Introduction with a fun hook
@@ -97,7 +117,7 @@ export default function Slides() {
           return { title, bullets };
         });
 
-        // Add a spectacular ending slide
+        // Add conclusion slide
         formattedSlides.push({ 
           title: "🎉 Amazing! You've Learned So Much!", 
           bullets: [
@@ -111,9 +131,18 @@ export default function Slides() {
         setLoading(false);
         setIsGenerating(false);
       }).catch(err => {
-        console.error(err);
+        console.error('Error fetching slides:', err);
         setLoading(false);
         setIsGenerating(false);
+        // Fallback slides
+        setSlides([{
+          title: "📚 Welcome to " + topic,
+          bullets: [
+            "Let's explore this amazing topic together!",
+            "Get ready for an exciting learning journey",
+            "Each slide will teach you something new"
+          ]
+        }]);
       });
     }
   }, [topic]);
@@ -124,10 +153,6 @@ export default function Slides() {
     setIsGenerating(true);
     
     try {
-      // Dynamically import html2pdf only when needed
-      const html2pdf = (await import('html2pdf.js')).default;
-      
-      // Create a clean PDF version of slides
       const printWindow = window.open('', '_blank');
       
       const pdfContent = `
@@ -155,9 +180,7 @@ export default function Slides() {
               justify-content: center;
               position: relative;
             }
-            .slide:last-child {
-              page-break-after: avoid;
-            }
+            .slide:last-child { page-break-after: avoid; }
             h1 {
               text-align: center;
               font-size: 36px;
@@ -190,12 +213,11 @@ export default function Slides() {
             .slide-4 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
             .slide-5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
             .slide-6 { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
-            .slide-7 { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
           </style>
         </head>
         <body>
           ${slides.map((slide, index) => `
-            <div class="slide slide-${(index % 7) + 1}">
+            <div class="slide slide-${(index % 6) + 1}">
               <h1>${slide.title}</h1>
               <ul>
                 ${slide.bullets.filter(bullet => bullet.trim()).map(bullet => `
@@ -211,7 +233,6 @@ export default function Slides() {
       printWindow.document.write(pdfContent);
       printWindow.document.close();
       
-      // Wait for content to load, then print
       setTimeout(() => {
         printWindow.focus();
         printWindow.print();
@@ -224,12 +245,6 @@ export default function Slides() {
     } finally {
       setIsGenerating(false);
     }
-  };
-
-  const slideVariants = {
-    enter: { opacity: 0, scale: 0.8, rotateY: 90 },
-    center: { opacity: 1, scale: 1, rotateY: 0 },
-    exit: { opacity: 0, scale: 0.8, rotateY: -90 }
   };
 
   const getSlideGradient = (index) => {
@@ -245,23 +260,99 @@ export default function Slides() {
     return gradients[index % gradients.length];
   };
 
-  // Fallback component for SSR
-  const StaticSlide = ({ slide, index }) => (
-    <div
-      className="slide-content"
-      style={{ 
-        background: getSlideGradient(index),
-        color: '#ffffff'
-      }}
-    >
-      <h3 className="slide-title">{slide.title}</h3>
-      <ul className="slide-bullets">
-        {slide.bullets.map((bullet, i) => (
-          <li key={i}>{bullet}</li>
-        ))}
-      </ul>
-    </div>
-  );
+  // Enhanced slide component with optional motion
+  const SlideContent = ({ slide, index }) => {
+    const slideStyle = {
+      background: getSlideGradient(index),
+      color: '#ffffff',
+      borderRadius: '20px',
+      padding: '3rem',
+      minHeight: '400px',
+      position: 'relative',
+      overflow: 'hidden',
+      boxShadow: '0 15px 35px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3)',
+    };
+
+    if (motionEnabled && isClient) {
+      return (
+        <MotionDiv
+          className="slide-content"
+          style={slideStyle}
+          initial={{ opacity: 0, scale: 0.9, rotateY: 45 }}
+          animate={{ opacity: 1, scale: 1, rotateY: 0 }}
+          exit={{ opacity: 0, scale: 0.9, rotateY: -45 }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+        >
+          <MotionDiv
+            initial={{ opacity: 0, y: -30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+          >
+            <h3 className="slide-title">{slide.title}</h3>
+          </MotionDiv>
+          <ul className="slide-bullets">
+            {slide.bullets.map((bullet, i) => (
+              <MotionDiv
+                key={i}
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 + (i * 0.2), duration: 0.6 }}
+                as="li"
+              >
+                {bullet}
+              </MotionDiv>
+            ))}
+          </ul>
+        </MotionDiv>
+      );
+    }
+
+    // Fallback without motion
+    return (
+      <div className="slide-content" style={slideStyle}>
+        <h3 className="slide-title">{slide.title}</h3>
+        <ul className="slide-bullets">
+          {slide.bullets.map((bullet, i) => (
+            <li key={i}>{bullet}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  // Swiper configuration
+  const swiperOptions = {
+    modules: [Navigation, Pagination, A11y, EffectCoverflow],
+    spaceBetween: 30,
+    slidesPerView: 1,
+    navigation: true,
+    pagination: { 
+      clickable: true,
+      dynamicBullets: true,
+    },
+    effect: 'coverflow',
+    coverflowEffect: {
+      rotate: 30,
+      stretch: 0,
+      depth: 100,
+      modifier: 1,
+      slideShadows: true,
+    },
+    loop: false,
+    grabCursor: true,
+    centeredSlides: true,
+    onSlideChange: (swiper) => setCurrentSlide(swiper.activeIndex),
+    breakpoints: {
+      640: {
+        slidesPerView: 1,
+        spaceBetween: 20,
+      },
+      768: {
+        slidesPerView: 1,
+        spaceBetween: 30,
+      },
+    },
+  };
 
   return (
     <>
@@ -270,12 +361,6 @@ export default function Slides() {
         <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-        {/* Only load Swiper CSS on client side */}
-        {isClient && (
-          <>
-            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Swiper/8.4.7/swiper-bundle.min.css" />
-          </>
-        )}
       </Head>
 
       <style jsx global>{`
@@ -361,30 +446,6 @@ export default function Slides() {
           border: 1px solid rgba(255, 255, 255, 0.1);
         }
         
-        .slide-content {
-          border-radius: 20px;
-          padding: 3rem;
-          min-height: 400px;
-          position: relative;
-          overflow: hidden;
-          box-shadow: 
-            0 15px 35px rgba(0, 0, 0, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 0.3);
-          margin-bottom: 2rem;
-        }
-        
-        .slide-content::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 20px;
-          pointer-events: none;
-        }
-        
         .slide-title {
           font-size: 2.5rem;
           font-weight: 800;
@@ -442,27 +503,48 @@ export default function Slides() {
           50% { transform: scale(1.2) rotate(360deg); }
         }
         
+        /* Swiper Styles */
         .swiper {
-          padding: 2rem !important;
+          padding: 2rem 0 4rem 0 !important;
+          width: 100%;
+          height: auto;
+        }
+        
+        .swiper-slide {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: auto;
         }
         
         .swiper-button-next,
         .swiper-button-prev {
-          color: rgba(255, 255, 255, 0.8) !important;
-          background: rgba(255, 255, 255, 0.1) !important;
+          color: rgba(255, 255, 255, 0.9) !important;
+          background: rgba(255, 255, 255, 0.15) !important;
           border-radius: 50% !important;
           width: 50px !important;
           height: 50px !important;
           margin-top: -25px !important;
           backdrop-filter: blur(10px) !important;
-          border: 1px solid rgba(255, 255, 255, 0.2) !important;
+          border: 2px solid rgba(255, 255, 255, 0.2) !important;
           transition: all 0.3s ease !important;
         }
         
         .swiper-button-next:hover,
         .swiper-button-prev:hover {
-          background: rgba(255, 255, 255, 0.2) !important;
+          background: rgba(255, 255, 255, 0.25) !important;
           transform: scale(1.1) !important;
+          border-color: rgba(255, 255, 255, 0.4) !important;
+        }
+        
+        .swiper-button-next::after,
+        .swiper-button-prev::after {
+          font-size: 18px !important;
+          font-weight: bold !important;
+        }
+        
+        .swiper-pagination {
+          bottom: 10px !important;
         }
         
         .swiper-pagination-bullet {
@@ -470,11 +552,13 @@ export default function Slides() {
           opacity: 1 !important;
           margin: 0 8px !important;
           transition: all 0.3s ease !important;
+          width: 12px !important;
+          height: 12px !important;
         }
         
         .swiper-pagination-bullet-active {
           background: #667eea !important;
-          transform: scale(1.3) !important;
+          transform: scale(1.4) !important;
           box-shadow: 0 0 20px rgba(102, 126, 234, 0.6) !important;
         }
         
@@ -533,12 +617,24 @@ export default function Slides() {
           backdrop-filter: blur(10px);
           border: 2px solid rgba(102, 126, 234, 0.3);
           box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+          z-index: 100;
         }
 
-        .static-slides {
-          max-height: 60vh;
-          overflow-y: auto;
-          padding: 1rem;
+        @media (max-width: 768px) {
+          .slide-title {
+            font-size: 2rem;
+          }
+          
+          .slide-bullets li {
+            font-size: 1.1rem;
+          }
+          
+          .progress-indicator {
+            top: 10px;
+            right: 15px;
+            padding: 8px 15px;
+            font-size: 0.9rem;
+          }
         }
       `}</style>
 
@@ -558,23 +654,10 @@ export default function Slides() {
       </nav>
 
       <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', paddingTop: '6rem' }}>
-        <div className="slides-container" style={{ width: '100%', maxWidth: '900px', padding: '2.5rem', position: 'relative' }}>
-          {/* Title with conditional animation */}
-          {isClient && motion ? (
-            <motion.h2 
-              className="text-center mb-4" 
-              style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-            >
-              ✨ {topic} - Interactive Learning Journey ✨
-            </motion.h2>
-          ) : (
-            <h2 className="text-center mb-4" style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}>
-              ✨ {topic} - Interactive Learning Journey ✨
-            </h2>
-          )}
+        <div className="slides-container" style={{ width: '100%', maxWidth: '1000px', padding: '2.5rem', position: 'relative' }}>
+          <h2 className="text-center mb-4" style={{ color: '#ffffff', fontSize: '2.2rem', fontWeight: '700' }}>
+            ✨ {topic} - Interactive Learning Journey ✨
+          </h2>
           
           {slides.length > 0 && (
             <div className="progress-indicator">
@@ -593,62 +676,21 @@ export default function Slides() {
             </div>
           ) : (
             <>
-              {/* Conditional rendering based on client availability */}
-              {isClient && Swiper && SwiperSlide ? (
+              {/* Swiper Component */}
+              {isClient && slides.length > 0 && (
                 <Swiper
                   ref={swiperRef}
-                  modules={[Navigation, Pagination, A11y]}
-                  spaceBetween={30}
-                  slidesPerView={1}
-                  navigation
-                  pagination={{ clickable: true }}
-                  onSlideChange={(swiper) => setCurrentSlide(swiper.activeIndex)}
-                  style={{ padding: '1rem' }}
+                  {...swiperOptions}
                 >
                   {slides.map((slide, index) => (
                     <SwiperSlide key={index}>
-                      {motion ? (
-                        <motion.div
-                          className="slide-content"
-                          style={{ 
-                            background: getSlideGradient(index),
-                            color: '#ffffff'
-                          }}
-                          variants={slideVariants}
-                          initial="enter"
-                          animate="center"
-                          exit="exit"
-                          transition={{ duration: 0.6, ease: 'easeInOut' }}
-                        >
-                          <h3 className="slide-title">{slide.title}</h3>
-                          <ul className="slide-bullets">
-                            {slide.bullets.map((bullet, i) => (
-                              <motion.li 
-                                key={i}
-                                initial={{ opacity: 0, x: -30 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: i * 0.2, duration: 0.6 }}
-                              >
-                                {bullet}
-                              </motion.li>
-                            ))}
-                          </ul>
-                        </motion.div>
-                      ) : (
-                        <StaticSlide slide={slide} index={index} />
-                      )}
+                      <SlideContent slide={slide} index={index} />
                     </SwiperSlide>
                   ))}
                 </Swiper>
-              ) : (
-                // Fallback static slides for SSR
-                <div className="static-slides">
-                  {slides.map((slide, index) => (
-                    <StaticSlide key={index} slide={slide} index={index} />
-                  ))}
-                </div>
               )}
 
+              {/* Action Buttons */}
               <div className="d-grid gap-3 mt-4">
                 <Button 
                   className="magic-button"
