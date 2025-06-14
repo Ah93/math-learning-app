@@ -16,14 +16,24 @@ import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import 'swiper/css/effect-coverflow';
 
-// Dynamic import for framer-motion only (optional enhancement)
+// Safer dynamic import with proper error handling
 const MotionDiv = dynamic(
-  () => import('framer-motion').then((mod) => mod.motion.div),
+  () => import('framer-motion').then((mod) => ({
+    default: mod.motion.div
+  })),
   { 
     ssr: false,
     loading: () => null
   }
 );
+
+// Create a wrapper component to handle motion safely
+const AnimatedSlideWrapper = ({ children, motionEnabled, ...motionProps }) => {
+  if (motionEnabled) {
+    return <MotionDiv {...motionProps}>{children}</MotionDiv>;
+  }
+  return <div>{children}</div>;
+};
 
 export default function Slides() {
   const router = useRouter();
@@ -36,18 +46,25 @@ export default function Slides() {
   const [motionEnabled, setMotionEnabled] = useState(false);
   const swiperRef = useRef(null);
 
-  // Client-side detection
+  // Client-side detection with better error handling
   useEffect(() => {
     setIsClient(true);
-    // Check if framer-motion is available
-    import('framer-motion').then(() => {
-      setMotionEnabled(true);
-    }).catch(() => {
-      setMotionEnabled(false);
-    });
+    
+    // Safer framer-motion detection
+    const checkMotion = async () => {
+      try {
+        await import('framer-motion');
+        setMotionEnabled(true);
+      } catch (error) {
+        console.log('Framer Motion not available, using fallback animations');
+        setMotionEnabled(false);
+      }
+    };
+    
+    checkMotion();
   }, []);
 
-  // Enhanced particle system
+  // Enhanced particle system with better client-side check
   useEffect(() => {
     if (!isClient) return;
     
@@ -62,12 +79,14 @@ export default function Slides() {
     for (let i = 0; i < 80; i++) {
       const particle = document.createElement('div');
       particle.className = 'particle';
-      particle.style.left = `${Math.random() * 100}%`;
-      particle.style.top = `${Math.random() * 100}%`;
-      particle.style.animationDuration = `${4 + Math.random() * 6}s`;
-      particle.style.animationDelay = `${Math.random() * 2}s`;
-      particle.style.background = colors[Math.floor(Math.random() * colors.length)];
-      particle.style.transform = `scale(${0.5 + Math.random() * 0.8})`;
+      particle.style.cssText = `
+        left: ${Math.random() * 100}%;
+        top: ${Math.random() * 100}%;
+        animation-duration: ${4 + Math.random() * 6}s;
+        animation-delay: ${Math.random() * 2}s;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        transform: scale(${0.5 + Math.random() * 0.8});
+      `;
       container.appendChild(particle);
     }
 
@@ -78,26 +97,30 @@ export default function Slides() {
     };
   }, [isClient]);
 
-  // Fetch slides data
+  // Fetch slides data with better error handling
   useEffect(() => {
-    if (topic) {
-      setIsGenerating(true);
-      setLoading(true);
-      
-      axios.post('/api/gemini', {
-        prompt: `Create an engaging educational presentation about "${topic}" for primary school students. Generate exactly 4-5 slides with:
-        - Slide 1: Introduction with a fun hook
-        - Slides 2-4: Core concepts broken down simply
-        - Final slide: Fun summary or conclusion
+    if (!topic) return;
+    
+    setIsGenerating(true);
+    setLoading(true);
+    
+    const fetchSlides = async () => {
+      try {
+        const response = await axios.post('/api/gemini', {
+          prompt: `Create an engaging educational presentation about "${topic}" for primary school students. Generate exactly 4-5 slides with:
+          - Slide 1: Introduction with a fun hook
+          - Slides 2-4: Core concepts broken down simply
+          - Final slide: Fun summary or conclusion
+          
+          Format each slide with:
+          - A catchy, emoji-enhanced title
+          - 3-4 clear bullet points
+          - Simple language appropriate for children
+          
+          Make it educational but exciting!`,
+        });
         
-        Format each slide with:
-        - A catchy, emoji-enhanced title
-        - 3-4 clear bullet points
-        - Simple language appropriate for children
-        
-        Make it educational but exciting!`,
-      }).then(res => {
-        const rawText = res.data.candidates[0].content.parts[0].text;
+        const rawText = response.data.candidates[0].content.parts[0].text;
         const rawSlides = rawText.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
 
         const formattedSlides = rawSlides.map((slide, index) => {
@@ -128,12 +151,8 @@ export default function Slides() {
         });
 
         setSlides(formattedSlides);
-        setLoading(false);
-        setIsGenerating(false);
-      }).catch(err => {
-        console.error('Error fetching slides:', err);
-        setLoading(false);
-        setIsGenerating(false);
+      } catch (error) {
+        console.error('Error fetching slides:', error);
         // Fallback slides
         setSlides([{
           title: "📚 Welcome to " + topic,
@@ -143,8 +162,13 @@ export default function Slides() {
             "Each slide will teach you something new"
           ]
         }]);
-      });
-    }
+      } finally {
+        setLoading(false);
+        setIsGenerating(false);
+      }
+    };
+
+    fetchSlides();
   }, [topic]);
 
   const handleDownloadPDF = async () => {
@@ -154,6 +178,9 @@ export default function Slides() {
     
     try {
       const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Pop-up blocked');
+      }
       
       const pdfContent = `
         <!DOCTYPE html>
@@ -260,7 +287,7 @@ export default function Slides() {
     return gradients[index % gradients.length];
   };
 
-  // Enhanced slide component with optional motion
+  // Enhanced slide component with safer motion handling
   const SlideContent = ({ slide, index }) => {
     const slideStyle = {
       background: getSlideGradient(index),
@@ -273,9 +300,21 @@ export default function Slides() {
       boxShadow: '0 15px 35px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.3)',
     };
 
+    const slideContent = (
+      <>
+        <h3 className="slide-title">{slide.title}</h3>
+        <ul className="slide-bullets">
+          {slide.bullets.map((bullet, i) => (
+            <li key={i}>{bullet}</li>
+          ))}
+        </ul>
+      </>
+    );
+
     if (motionEnabled && isClient) {
       return (
-        <MotionDiv
+        <AnimatedSlideWrapper
+          motionEnabled={true}
           className="slide-content"
           style={slideStyle}
           initial={{ opacity: 0, scale: 0.9, rotateY: 45 }}
@@ -283,49 +322,27 @@ export default function Slides() {
           exit={{ opacity: 0, scale: 0.9, rotateY: -45 }}
           transition={{ duration: 0.8, ease: 'easeOut' }}
         >
-          <MotionDiv
-            initial={{ opacity: 0, y: -30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-          >
-            <h3 className="slide-title">{slide.title}</h3>
-          </MotionDiv>
-          <ul className="slide-bullets">
-            {slide.bullets.map((bullet, i) => (
-              <MotionDiv
-                key={i}
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 + (i * 0.2), duration: 0.6 }}
-                as="li"
-              >
-                {bullet}
-              </MotionDiv>
-            ))}
-          </ul>
-        </MotionDiv>
+          {slideContent}
+        </AnimatedSlideWrapper>
       );
     }
 
     // Fallback without motion
     return (
       <div className="slide-content" style={slideStyle}>
-        <h3 className="slide-title">{slide.title}</h3>
-        <ul className="slide-bullets">
-          {slide.bullets.map((bullet, i) => (
-            <li key={i}>{bullet}</li>
-          ))}
-        </ul>
+        {slideContent}
       </div>
     );
   };
 
-  // Swiper configuration
+  // Safer Swiper configuration
   const swiperOptions = {
     modules: [Navigation, Pagination, A11y, EffectCoverflow],
     spaceBetween: 30,
     slidesPerView: 1,
-    navigation: true,
+    navigation: {
+      enabled: true,
+    },
     pagination: { 
       clickable: true,
       dynamicBullets: true,
@@ -341,7 +358,11 @@ export default function Slides() {
     loop: false,
     grabCursor: true,
     centeredSlides: true,
-    onSlideChange: (swiper) => setCurrentSlide(swiper.activeIndex),
+    onSlideChange: (swiper) => {
+      if (swiper && typeof swiper.activeIndex !== 'undefined') {
+        setCurrentSlide(swiper.activeIndex);
+      }
+    },
     breakpoints: {
       640: {
         slidesPerView: 1,
@@ -353,6 +374,26 @@ export default function Slides() {
       },
     },
   };
+
+  // Don't render until client-side
+  if (!isClient) {
+    return (
+      <>
+        <Head>
+          <title>{topic || 'Loading'} Slides - EduMath</title>
+        </Head>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #0f1419 0%, #1a202c 100%)'
+        }}>
+          <Spinner animation="border" variant="primary" size="lg" />
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -677,7 +718,7 @@ export default function Slides() {
           ) : (
             <>
               {/* Swiper Component */}
-              {isClient && slides.length > 0 && (
+              {slides.length > 0 && (
                 <Swiper
                   ref={swiperRef}
                   {...swiperOptions}
@@ -707,7 +748,7 @@ export default function Slides() {
                       className="magic-button w-100"
                       style={{ background: 'linear-gradient(45deg, #38a169, #2f855a) !important' }}
                       onClick={handleDownloadPDF}
-                      disabled={isGenerating || !isClient}
+                      disabled={isGenerating}
                     >
                       {isGenerating ? (
                         <>
